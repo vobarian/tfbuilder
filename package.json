@@ -2,7 +2,7 @@
   "name": "tfjs",
   "version": "0.1.0",
   "description": "Terraform generator",
-  "main": "index.js",
+  "main": "lib/index.js",
   "scripts": {
     "test": "jasmine"
   },
@@ -10,5 +10,8 @@
   "license": "ISC",
   "devDependencies": {
     "jasmine": "^3.0.0"
-  }
+  },
+  "files": [
+    "lib/*.js"
+  ]
 }
