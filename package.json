@@ -4,7 +4,9 @@
   "description": "Terraform generator",
   "main": "lib/index.js",
   "scripts": {
-    "test": "jasmine"
+    "test": "npm run unit-test && npm run integration-test",
+    "unit-test": "jasmine",
+    "integration-test": "jasmine spec/integration/integration.spec.js"
   },
   "author": "",
   "license": "ISC",
