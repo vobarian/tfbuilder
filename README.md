@@ -42,8 +42,8 @@ data "local_file" "stuff" {
     filename = "input.txt"
 }
 resource "local_file" "abc" {
-    filename: "output.txt"
-    content: "${data.local_file.stuff.content} ok"
+    filename = "output.txt"
+    content = "${data.local_file.stuff.content} ok"
 }
 ```
 TFJS:
