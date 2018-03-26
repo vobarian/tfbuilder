@@ -13,7 +13,7 @@ design is open to change.
 
 ## Usage
 
-Run `npm install`, then:
+`npm install tfjs` (from resolver)
 
 ```javascript
 const {Configuration} = require('tfjs');
@@ -345,6 +345,7 @@ I need some feedback and I'm open to reconsidering the whole design. The princip
 
 Here's also some specific ideas/questions I had:
 
+- Would be interested in coming up with a better name for the project
 - Is it better to pass interpolation strings into functions or whole resource objects?
 - When merging, should there be an option (or requirement) to specify a base name that
   would be prepended to all the resources, data sources, etc.? This would ease the burden
@@ -372,11 +373,16 @@ Here's also some specific ideas/questions I had:
   (which would be "${module.example.output.a}"). I *think* this would inherently
   support arrays too because `module.example.output[0]` would become
   "${module.example.output.0}" which I think Terraform accepts (?)
-- Should it be possible to set the whole `resource` block (top level) or a whole 
+- Should it be possible to set a whole
   resource class block (such as aws_s3_bucket) to a JS object? Currently it's not
   allowed because it would take some extra work to implement, didn't seem very useful,
   and seems more likely to be something done on accident than on purpose due to
   misunderstanding or typo. My plan was if you wanted to add a bunch of resources from
   an external source (function) you'd just get them as part of a Configuration which
   you could `.merge`. Maybe there are use cases for directly setting these sections
-  I haven't thought of.
+  I haven't thought of. It would allow adding several instances of the same type
+  of resource or data source at once, but so does `.merge` (except the latter
+  requires a whole `Configuration` object)
+- Do we need interpolation magic for variables and locals? How would it work/look?
+  Does reading a variable always give you the interpolation or do you get back the
+  value you set and use a different method to get the interpolation string?

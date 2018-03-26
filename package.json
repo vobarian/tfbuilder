@@ -15,5 +15,8 @@
   },
   "files": [
     "lib/*.js"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "http://resolver/api/npm/npm-local/"
+  }
 }
