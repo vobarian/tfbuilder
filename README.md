@@ -1,40 +1,53 @@
-# TFJS Alpha
+# TfBuilder
 
-TFJS is a minimal Node.js module to simplify generation of
-Terraform configurations as JSON. It makes it convenient to use JavaScript
-rather than HCL.
-
-This is an alpha version/proof of concept. The code is well tested
-but the API may change radically based on feedback. I need some
-people to start playing with it to get design feedback.
-
-This documentation is minimal and not well edited so far because the
-design is open to change.
+TfBuilder is a small JavaScript library that simplifies generating
+[Terraform](https://www.terraform.io/) JSON instead of HCL. It overcomes
+the limitations of HCL by using a well-known, general-purpose scripting
+language while maintaining concise syntax and simplicity. The generated
+JSON is fully interoperable with hand-written `.tf` HCL files.
+TfBuilder is thoroughly tested.
 
 ## Usage
 
-`npm install tfjs` (from resolver)
+`npm install @vobarian/tfbuilder`
 
 ```javascript
 const {Configuration} = require('tfjs');
 const config = Configuration();
-// build your config
+// build config as described below
 config.writeTo('myconfig.tf.json');
 ```
 
-Don't use `new` with `Configuration`; it's a factory function.
+After generating your `.tf.json` files, you can invoke normal `terraform` 
+commands. You'll probably want to run your TfBuilder based scripts and
+Terraform together using a shell script or makefile.
 
 ## Configuration
 
 Since we're ultimately building JSON, it really
 helps to understand the equivalence of HCL to JSON first:
 https://www.terraform.io/docs/configuration/syntax.html.
- 
-`Configuration` exposes properties representing the top-level HCL blocks: `resource`, `data`, and `module`. These three are special because you can add properties
-to them just by referencing them and these properties
-become mapped to new objects.
 
-Here's a configuration that copies input.txt to output.txt while appending "ok":
+TfBuilder provides a single factory function, `Configuration`, which returns
+an object representing the top-level Terraform JSON object. 
+`Configuration` exposes the following properties representing HCL blocks:
+
+ * `resource`
+ * `data`
+ * `module`
+ * `variable`
+ * `locals`
+ * `output`
+ * `provider`
+
+### Resources, Data Sources, and Modules
+
+The `resource`, `data`, and `module` properties are special: they use
+proxies to dynamically add child properties with a compact syntax.
+Here's a configuration that copies the file input.txt to output.txt 
+while appending "ok" using Terraform's 
+[local_file data source](https://www.terraform.io/docs/providers/local/d/file.html)
+and [local_file resource](https://www.terraform.io/docs/providers/local/r/file.html):
 
 HCL:
 ```hcl
@@ -46,85 +59,108 @@ resource "local_file" "abc" {
     content = "${data.local_file.stuff.content} ok"
 }
 ```
-TFJS:
+TfBuilder:
 ```javascript
 const {resource, data} = config; // convenience
-data.local_file.stuff = {
+data.local_file.my_input = {
     filename: 'input.txt'
 }
-resource.local_file.abc = {
+resource.local_file.my_output = {
     filename: 'output.txt',
-    content: data.local_file.stuff.content + ' ok'
+    content: data.local_file.my_input.content + ' ok'
 }
 ```
 
-Notice
-that you can assign the `stuff` property on `data.local_file`
-even though we didn't set `local_file` to a new object first.
-With a normal object this wouldn't work but it's one of
-the shortcuts TFJS provides.
+Notice that you can assign the `my_input` property on the object
+`data.local_file` even though we didn't set `local_file`
+to a new object first.
 
-In the resource, notice that the `content` property references
-the `content` property of `data.local_file.stuff`, which we
-never defined. When you *read* a non-existent property of a
-resource, data source, or module object, TFJS automatically
-turns it into an interpolation string for you, as in the
-HCL equivalent above.
+In the resource we use the expression `data.local_file.my_input.content`
+even though we never defined a `content` property on `my_input`.
+When you *read* a non-existent property of a
+resource, data source, or module object, TfBuilder automatically
+builds an interpolation string for you, equivalent to the
+HCL above. This syntax is easier to read than HCL's
+quote-dollar-curly brace interpolation.
+
+Since you're working with JavaScript objects, you can also use
+variables to simplify your code. For example:
+
+```javascript
+const inputFile = data.local_file.my_input = {
+    filename: 'input.txt'
+}
+```
+
+Then you can just use `inputFile.content`, which TfBuilder
+automatically turns into the equivalent interpolation string
+`"${data.local_file.my_input.content}"`.
 
 When you just need a constant, sometimes you can simplify your code
-by using local JavaScript variables instead of interpolation. This
-is the case when you just need to have the same value in multiple places
+by using local JavaScript variables or constants 
+instead of interpolation. This works when you just need to
+have the same value in multiple places
 but there is no dependency between the configuration blocks where
 it's used. But beware that you must use interpolation if there is
 a dependency because Terraform uses interpolations to build its
 dependency graph which determines the order in which it creates
-resources. Fortunately TFJS hides the ugly interpolation syntax
-from you: just pretend the properties you want exist and it will
-generate them.
+resources.
 
-When you read a property of a resource, data source, or module
-in TFJS, if it was previously set, you just get back the value
-you set, as you would with a normal JavaScript object. If the
-property does not exist, TFJS assumes it's an output/attribute
-and generates the interpolation string for you. If you have a
-module where the same name is used as both an input and an
-output, you can use the special `$output` method to generate
-the interpolation string:
+Interpolation strings are generated for you only when you read
+a non-existent property. If you assigned a value to a property
+and then read it, you just get back the value as you would for
+a normal JavaScript object. Usually this strategy works fine
+because the names of resource arguments and attributes rarely
+overlap. However, if you have a module, data source, or
+resource where the same name is used as both an input and an
+output, you can use the automatically provided `$output` method
+to generate the interpolation string:
 
 ```javascript
-// Suppose this module uses "name" as an input and output
+// Suppose this module uses "special" as the name of
+// both input and output variables
 const m = config.module.example = {
     source: './example',
-    name: 'something' // input to module
+    special: 'something' // input variable named "special"
 }
 config.resource.local_file.abc = {
-    // name property was set, so it's just "something":
-    filename: m.name,
-    // use $output to get "${module.example.name}"
-    content: m.$output('name')
+    filename: m.special, // == "something"
+    content: m.$output('special') // == "${module.example.special}"
 }
 ```
 
-`Configuration` also provides properties `variable`, `locals`,
-`output`, and `provider`, corresponding to the top-level HCL
-blocks. These aren't magical; they're just JavaScript objects.
-They're included for the sake of completeness but if you use
-TFJS for everything I don't think they're needed, since
-functions can replace modules, parameters replace variables,
-the function return value replaces outputs, and JavaScript
-local variables...well, they're local variables.
-
+The objects you create correspond directly to the JSON that will
+be generated.
 Translating HCL documentation to JSON can be tricky because it's
 not always clear what the data type should be for nested blocks.
 Generally, any repeatable block is an array.
 If you use a map for a nested configuration
 block and get syntax errors, try wrapping it in an array. A
 good example is the `cache_behavior` blocks on an
-`aws_cloudfront_distribution` resource, or the `lifecycle_rule` blocks in `aws_s3_bucket`. They're repeatable nested
-blocks so they must be arrays in JSON, and TFJS by extension.
+`aws_cloudfront_distribution` resource, or the `lifecycle_rule`
+blocks in `aws_s3_bucket`. They're repeatable nested
+blocks so they must be arrays.
 It's not always clear from the docs what is repeatable and what
 isn't; often, repeatable things have a plural argument name
-but not always.
+but not always. If you can't figure out the object graph
+corresponding to some HCL snippet, you could try running
+an HCL-to-JSON converter.
+
+### Variables, Locals, and Outputs
+
+`Configuration` also provides properties `variable`, `locals`, and
+`output`, corresponding to those HCL
+blocks. These don't provide any magic properties or
+interpolation; they're just JavaScript objects.
+
+TfBuilder provides `variable`, `locals`, and `output` to facilitate
+interoperability with hand-written Terraform. However if you build
+everything with TfBuilder they should be unnecessary, since
+functions can replace modules, parameters replace variables,
+the function return value replaces outputs, and JavaScript
+of course already has local variables.
+
+### Providers
 
 In HCL `provider` blocks are unusual because unlike
 other repeated configuration blocks they don't have unique
@@ -163,19 +199,23 @@ the rest of the config block. The above HCL in JSON is:
 }
 ```
 
-To ease the pain, TFJS provides an `add` method on the `provider` array:
+To ease the pain, `Configuration` has a `provider` array with a special
+`add` method:
 ```javascript
 config.provider.add('aws', {
     region: 'us-east-1'
 })
-const backupRegion = 'us-west-2'
 config.provider.add('aws', {
-    region: backupRegion,
-    alias:  backupRegion
+    region: 'us-west-2',
+    alias:  'us-west-2'
 })
 ```
-Also note that Terraform prohibits using interpolation in the `alias`
-argument but TFJS doesn't care if you use a local variable (or a function call, or any string expression for that matter).
+
+Terraform prohibits using interpolation in the `alias`
+argument but you can use a JavaScript variable or function since it's
+evaluated before the JSON is written out.
+
+### Building Larger Configurations
 
 `Configuration` provides a `merge` method to combine two Configurations.
 
