@@ -1,26 +1,33 @@
 # TfBuilder
 
-TfBuilder is a small JavaScript library that simplifies generating
+## What It Is
+
+TfBuilder is a very small JavaScript library that simplifies generating
 [Terraform](https://www.terraform.io/) JSON instead of HCL. It overcomes
 the limitations of HCL by using a well-known, general-purpose scripting
 language while maintaining concise syntax and simplicity. The generated
 JSON is fully interoperable with hand-written `.tf` HCL files.
 TfBuilder is thoroughly tested.
 
+## Why
+
+HCL can be very frustrating. Here's how TfBuilder helps [Overcome HCL Limitations](#overcome-hcl-limitations).
+Why JavaScript? It is very widely known, allows a syntax similar to HCL, and is dynamically typed (which
+is necessary to support the full range of Terraform providers at all times).
+
 ## Usage
 
 `npm install @vobarian/tfbuilder`
 
 ```javascript
-const {Configuration} = require('tfjs');
+const {Configuration} = require('@vobarian/tfbuilder');
 const config = Configuration();
 // build config as described below
 config.writeTo('myconfig.tf.json');
 ```
 
 After generating your `.tf.json` files, you can invoke normal `terraform` 
-commands. You'll probably want to run your TfBuilder based scripts and
-Terraform together using a shell script or makefile.
+commands. (Use a shell script or makefile to do both at once.)
 
 ## Configuration
 
@@ -56,7 +63,7 @@ data "local_file" "stuff" {
 }
 resource "local_file" "abc" {
     filename = "output.txt"
-    content = "${data.local_file.stuff.content} ok"
+    content  = "${data.local_file.stuff.content} ok"
 }
 ```
 TfBuilder:
@@ -96,19 +103,9 @@ Then you can just use `inputFile.content`, which TfBuilder
 automatically turns into the equivalent interpolation string
 `"${data.local_file.my_input.content}"`.
 
-When you just need a constant, sometimes you can simplify your code
-by using local JavaScript variables or constants 
-instead of interpolation. This works when you just need to
-have the same value in multiple places
-but there is no dependency between the configuration blocks where
-it's used. But beware that you must use interpolation if there is
-a dependency because Terraform uses interpolations to build its
-dependency graph which determines the order in which it creates
-resources.
-
 Interpolation strings are generated for you only when you read
-a non-existent property. If you assigned a value to a property
-and then read it, you just get back the value as you would for
+a non-existent property. If you assign a value to a property
+and then read it, you just get back the value as you would with
 a normal JavaScript object. Usually this strategy works fine
 because the names of resource arguments and attributes rarely
 overlap. However, if you have a module, data source, or
@@ -135,14 +132,15 @@ Translating HCL documentation to JSON can be tricky because it's
 not always clear what the data type should be for nested blocks.
 Generally, any repeatable block is an array.
 If you use a map for a nested configuration
-block and get syntax errors, try wrapping it in an array. A
+block and get syntax errors when you run Terraform,
+try wrapping it in an array. A
 good example is the `cache_behavior` blocks on an
 `aws_cloudfront_distribution` resource, or the `lifecycle_rule`
 blocks in `aws_s3_bucket`. They're repeatable nested
 blocks so they must be arrays.
 It's not always clear from the docs what is repeatable and what
 isn't; often, repeatable things have a plural argument name
-but not always. If you can't figure out the object graph
+but not always. If you can't figure out the object tree
 corresponding to some HCL snippet, you could try running
 an HCL-to-JSON converter.
 
@@ -162,15 +160,15 @@ of course already has local variables.
 
 ### Providers
 
-In HCL `provider` blocks are unusual because unlike
-other repeated configuration blocks they don't have unique
+In HCL, `provider` blocks are unusual because, unlike
+other repeated configuration blocks, they don't have unique
 names before the curly braces; e.g.:
 ```hcl
 provider "aws" {
     region = "us-east-1"
 }
 provider "aws" {
-    alias  = "us-west-2"
+    alias  = "backup"
     region = "us-west-2"
 }
 ```
@@ -191,7 +189,7 @@ the rest of the config block. The above HCL in JSON is:
         },
         {
             "aws": {
-                "alias": "us-west-2",
+                "alias": "backup",
                 "region": "us-west-2"
             }
         }
@@ -206,8 +204,8 @@ config.provider.add('aws', {
     region: 'us-east-1'
 })
 config.provider.add('aws', {
-    region: 'us-west-2',
-    alias:  'us-west-2'
+    alias:  'backup',
+    region: 'us-west-2'
 })
 ```
 
@@ -217,43 +215,71 @@ evaluated before the JSON is written out.
 
 ### Building Larger Configurations
 
-`Configuration` provides a `merge` method to combine two Configurations.
+`Configuration` has a `merge` method to combine two Configurations.
 
-An object that is assigned to a Configuration as a resource, data source,
-or module cannot later be assigned to the same or another Configuration.
-If you want to attach an object in more than one place to a Configuration
-or to more than one Configuration you need to manually do a deep copy first.
+An advantage of using JavaScript is that functions can help modularize
+code and reduce duplication. Functions are more flexible and
+concise than Terraform modules. Also, functions can be used to
+build nested blocks, whereas Terraform modules can only create
+whole resources, data sources, etc.
 
-You can get your configuration's JSON at any time by reading
-Configuration's `json` property. As a convenience you can
-pass a file name to `writeTo` to write it to a file. File names
-must end in `.tf.json` for Terraform to recognize them.
+A function's parameters take the place of module input variables.
+Output variables generally aren't needed since any properties can
+be read directly from the returned object.
+
+If a function only creates a single
+resource, data source, or module, you can just return it and assign it
+to an appropriate place in the configuration tree:
+
+```javascript
+function secureS3Bucket(params) { /* return object with aws_s3_bucket args */ }
+
+config.resource.aws_s3_bucket.my_bucket = secureS3Bucket(/* params */)
+```
+
+If your function produces multiple objects, you could pass a
+Configuration as a parameter and mutate it in the function, but
+APIs are usually cleaner if they do not mutate the parameters.
+Rather you can return a Configuration and then merge it:
+
+```javascript
+function loadBalancedCluster(options) { /* create & return a Configuration */ }
+
+config.merge(loadBalancedCluster(/* params */))
+```
+
+The latter approach reduces the amount of code required where the
+function is called and relieves the caller of the responsibility for
+knowing the resource or data source type (e.g., `aws_s3_bucket`),
+so you may prefer it even for functions that only create one resource.
+
+Every resource, data source, etc. in Terraform needs a unique name
+(address). Terraform modules create unique names by prefixing any resources
+with `module.{module_name}`. But Terraform is unaware of any
+JavaScript functions, so it is up to you to create unique names. If
+you want to use a function more than once, the resources it creates
+need a prefix to make them unique. You could pass a prefix as a parameter.
 
 ## Interoperability
 
 After you finally output your configuration to a `.tf.json` file,
 Terraform reads it along with all other `.tf` and `.tf.json` files
-in the directory. So you can freely mix TFJS and plain Terraform
-files. You can interpolate between them too: you can just type an
-interpolation string in your TFJS that references resources in
-an ordinary `.tf` file and vice versa. Terraform resolves all
-that when it runs and to TFJS they're all just strings.
+in the directory. So you can freely mix TfBuilder scripts and plain
+Terraform files. You can interpolate between them too: just type an
+interpolation string in your JavaScript that references resources in
+an ordinary `.tf` file or vice versa. Terraform resolves all
+the names when it runs, and to TfBuilder they're all just strings.
 
-If you want to create a module that supports both TFJS and 
+If you want to create a module that supports both TfBuilder and 
 plain Terraform users, you could package a function as an
 npm module but also output the JSON in your build process
 and commit that so it can also be used as a Terraform module.
 Obviously you'd need to add Terraform input `variable`s and
 `output`s.
 
-## Effective Usage
+## Recommendations
 
-In JavaScript, all things are possible but few things are wise.
-I haven't used TFJS enough yet to know what's best, but these are
-some ideas I had to start from. Maybe they're even bad ideas.
-Feedback is welcome.
-
-* Keep it simple. We don't want it to be worse than HCL. Use
+* Keep it simple. Use
   simple constructs like first-order functions, `if` statements, and `for` loops,
   and only where needed.
 * In each `.js` source file create at most one `Configuration` and export
@@ -262,60 +288,70 @@ Feedback is welcome.
   const config = Configuration();
   module.exports = config;
   ```
-* Have a main `.js` file that `require`s the others; output them all to
+  Then make a main `.js` file that `require`s the others; output them all to
   separate `.tf.json` files (possibly in parallel using `Promise.all`).
+* Use a shell script or makefile to run your TfBuilder based scripts and
+  Terraform together.
 * It's handy to destructure a `Configuration` instance once in each file
   (unfortunately, you can't include `module` because that's already
   special in Node.js).
   ```javascript
   const config = Configuration();
   const {resource, data, variable} = config; // whichever ones you use
-* Don't write Terraform modules; write functions and package them as npm modules.
-* Don't pass a `Configuration` into a function; let the function return something
-  to merge into the config.
-    * If your function builds one resource, data source, etc., just return it as a
-    plain JavaScript object. (Not sure about this--see next item; maybe it should
-    always be done that way instead?)
-    * If your function builds multiple resources, create a
-    `Configuration` inside the function, add everything to it, then return it.
-    The client can use the `merge` method to merge it into the main config.
-    Since everything must have a unique name in Terraform, such a function
-    probably needs to take a base name as an input so if the client uses it
-    more than once it doesn't generate duplicate names. This also allows the
-    client to make sure the names generated in the function don't collide
-    with its own.
+  resource.local_file.abc = { // instead of config.resource.local_file.abc = ...
+  ```
 
-## Cool Things
+## Overcome HCL Limitations
 
-Eventually this section will become a demo of how to overcome common HCL limitations
-in a before/after style. For now I just wanted to document a few things I felt make
-using JavaScript/TFJS nice.
+This section demonstrates cool things you can do more easily with JavaScript.
 
 ### Local Variables
-Interpolation strings can get really long and hard to read.
-Local variables in HCL are too much of a pain. In JS you can easily
-alias an object to a local variable:
-```javascript
-const oai = config.resource.aws_cloudfront_origin_access_identity.origin_access_identity = {
-    comment: 'what a long resource name'
+Local variables are painfully awkward in HCL: 
+```hcl
+locals {
+    app_name = "5250 Cloud Proxy"
 }
-config.resource.aws_cloudfront_distribution.cf = {
-    origin: [{
-        s3_origin_config: {
-            // Use oai instead of:
-            // resource.aws_cloudfront_origin_access_identity.origin_access_identity.cloudfront_access_identity_path
-            origin_access_identity: oai.cloudfront_access_identity_path
-        }
-    }]
+resource "example" "abc" {
+    some_arg = "${local.app_name}"
 }
 ```
 
+In JS, just use a constant anywhere you need to have a consistent value but
+don't want to have to find-and-replace later:
+```javascript
+const appName = '5250 Cloud Proxy'
+resource.example.abc = {
+    some_arg: appName
+}
+```
+
+Of course, you still have to use Terraform local variables for dynamic values
+which aren't known before Terraform runs. Also beware that you can't just use
+string constants if one resource depends on another;
+Terraform infers the dependency graph from interpolations, which affects the order
+in which resources are created. If one resource depends on another, interpolate
+the attributes of the first into the arguments of the second using Terraform
+interpolation syntax (via TfBuilder's magic properties shortcut). 
+
+Interpolation strings can get really long and hard to read. In JS you can easily
+alias an object to a local variable and then get properties, including interpolation
+expressions, off the local variable:
+```javascript
+const oai = resource.aws_cloudfront_origin_access_identity.identity = {
+    comment = 'what a long resource name'
+}
+// Now these 3 lines are equivalent, but one is much shorter:
+// resource.aws_cloudfront_origin_access_identity.identity.cloudfront_access_identity_path
+// "${aws_cloudfront_origin_access_identity.identity.cloudfront_access_identity_path}"
+// oai.cloudfront_access_identity_path
+```
+
 ### If Statements
-Using `count` for conditionals is hacky and doesn't work for nested config blocks. For example,
+Using `count` for conditionals is hacky and doesn't work for some nested config blocks. For example,
 in HCL, it's currently *impossible* to make an S3 bucket module with a conditional (controlled
 by input variables) logging configuration. In JavaScript it's trivial:
 ```javascript
-function customBucket({stuff, things, accessLogsBucket = null}) {
+function customBucket({otherParams, accessLogsBucket = null}) {
     const bucket = { /*bunch of fancy config*/ };
     if (accessLogsBucket) {
         bucket.logging = {
@@ -326,37 +362,37 @@ function customBucket({stuff, things, accessLogsBucket = null}) {
 }
 ```
 
-And this trainwreck:
+And this train wreck (which includes "AU" in the whitelist only if the current level is beta):
 ```hcl
 locals {
-  geo_whitelist_base = ["US","CA","RO"]
+  geo_whitelist_base = ["US","CA","AU"]
   geo_whitelist = "${slice(local.geo_whitelist_base, 0, length(local.geo_whitelist_base) - (var.level == "beta" ? 0 : 1))}"
 }
 ```
 becomes:
 ```javascript
 const countryWhitelist = ["US", "CA"]
-if (level === "beta") countryWhitelist.push("RO")
+if (level === "beta") countryWhitelist.push("AU")
 ```
 
 ### Functions
-I won't type this one out but simply using functions as subroutines can seriously
+Using functions as subroutines can seriously
 DRY up the code. One good use case is a CloudFront distribution with multiple
-cache behaviors that differ only in the path mapping and origin. In the PCA
-CloudFront configuration we had **120 lines** of HCL for cache behaviors;
-the TFJS equivalent is **37 lines** (not counting comments or blank lines
+cache behaviors that differ only in the path mapping and origin. For example, one
+project required **120 lines** of HCL to define 5 cache behaviors;
+the TfBuilder equivalent is **37 lines** (not counting comments or blank lines
 on either side).
 
-Functions can also be much more convenient than modules:
+Functions can also be much more convenient than Terraform modules:
+
+HCL:
+
 ```hcl
 module "cloudfront_tags" {
-  source = "git::ssh://git@coderepo.carfax.net:7999/terraform/tags.git"
+  source = "./tags_validator"
   tags = {
-    Name        = "CFP CloudFront Distribution"
-    Description = "CloudFront distribution for CARFAX For Police and eCrash frontend"
-    Status      = "InDevelopment"
-    Version     = "1.0.0"
-    Customer    = "External"
+    Name    = "Our CloudFront Distribution"
+    Version = "1.0.0"
   }
 }
 resource "aws_cloudfront_distribution" "cloudfront" {
@@ -364,65 +400,15 @@ resource "aws_cloudfront_distribution" "cloudfront" {
     // ...
 }
 ```
-TFJS:
+TfBuilder:
 ```javascript
-const tags = require('tags'); // once per module
-config.resource.aws_cloudfront_distribution.cloudfront = {
-    tags: tags({
-        Name        : "CFP CloudFront Distribution",
-        Description : "CloudFront distribution for CARFAX For Police and eCrash frontend",
-        Status      : "InDevelopment",
-        Version     : "1.0.0",
-        Customer    : "External",
+const validateTags = require('validate-tags'); // ONCE per file
+resource.aws_cloudfront_distribution.cloudfront = {
+    tags: validateTags({
+        Name    : "Our CloudFront Distribution",
+        Version : "1.0.0",
     })
+    // ...
 }
 ```
 
-## Need Help
-
-This is an alpha version. I'm wondering if this tool is well suited to real work.
-I need some feedback and I'm open to reconsidering the whole design. The principle is just to use some language other than HCL to generate JSON, and make doing so convenient.
-
-Here's also some specific ideas/questions I had:
-
-- Would be interested in coming up with a better name for the project
-- Is it better to pass interpolation strings into functions or whole resource objects?
-- When merging, should there be an option (or requirement) to specify a base name that
-  would be prepended to all the resources, data sources, etc.? This would ease the burden
-  of prefixing everything when you're writing a function that generates multiple
-  resources and returns them in a Configuration. (Prefix is needed so names chosen by the
-  function-module author do not collide with names used in the client or other modules,
-  and in case more than one instance of the module is used.) Other ideas for
-  namespacing modules (by which I mean functions that build Configurations)?
-- What is the best way to integrate running node and terraform? Shell script? Wrapper
-  script? Possible advantage of wrapper: variables passed on the command line could
-  be exposed to both Terraform and the JavaScript (maybe...how?)
-- What's a good way to get variables (such as environment level) into the JavaScript?
-  Is this something the library can help with or just use standard techniques?
-- Should there be a warning/error about null/undefined properties in the config?
-  They won't be serialized to JSON anyway but usually indicate a mistake because the
-  programmer meant to set it to something
-- Likewise above for empty objects; probably came into existence because of a typo
-- Is the provider.add method sufficiently useful to justify its existence or is it noise?
-- Is turning unknown properties into interpolation strings automatically even a good idea?
-- Is the $output function a good idea? Is there a better way to represent it?
-- Should the "magic" for reading non-existent properties go more than one level deep?
-  Example: If a module has a map type output we can write `module.example.output` to
-  get "${module.example.output}", which would be the whole map, but we can't currently
-  write `module.example.output.a` to get the value at key "a" from the map
-  (which would be "${module.example.output.a}"). I *think* this would inherently
-  support arrays too because `module.example.output[0]` would become
-  "${module.example.output.0}" which I think Terraform accepts (?)
-- Should it be possible to set a whole
-  resource class block (such as aws_s3_bucket) to a JS object? Currently it's not
-  allowed because it would take some extra work to implement, didn't seem very useful,
-  and seems more likely to be something done on accident than on purpose due to
-  misunderstanding or typo. My plan was if you wanted to add a bunch of resources from
-  an external source (function) you'd just get them as part of a Configuration which
-  you could `.merge`. Maybe there are use cases for directly setting these sections
-  I haven't thought of. It would allow adding several instances of the same type
-  of resource or data source at once, but so does `.merge` (except the latter
-  requires a whole `Configuration` object)
-- Do we need interpolation magic for variables and locals? How would it work/look?
-  Does reading a variable always give you the interpolation or do you get back the
-  value you set and use a different method to get the interpolation string?
