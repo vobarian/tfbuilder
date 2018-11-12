@@ -1,33 +1,32 @@
 # TfBuilder
 
-## What It Is
-
-TfBuilder is a very small JavaScript library that simplifies generating
-[Terraform](https://www.terraform.io/) JSON instead of HCL. It overcomes
-the limitations of HCL by using a well-known, general-purpose scripting
-language while maintaining concise syntax and simplicity. The generated
-JSON is fully interoperable with hand-written `.tf` HCL files.
+TfBuilder is a small JavaScript library to generate
+[Terraform](https://www.terraform.io/) code. It [overcomes
+the limitations of HCL](#overcome-hcl-limitations) by using a well-known, general-purpose scripting
+language while maintaining concise syntax and simplicity. 
 TfBuilder is thoroughly tested.
 
-## Why
-
-HCL can be very frustrating. Here's how TfBuilder helps [Overcome HCL Limitations](#overcome-hcl-limitations).
-Why JavaScript? It is very widely known, allows a syntax similar to HCL, and is dynamically typed (which
-is necessary to support the full range of Terraform providers at all times).
+A Terraform module comprises a directory containing `.tf` files written
+in HCL (HashiCorp Configuration Language). But HCL is just an alternative
+syntax for JSON. Terraform also reads any `.tf.json` files in the module
+directory. Files in both formats can be freely mixed.
+(https://www.terraform.io/docs/configuration/load.html)
+TfBuilder makes it easier to generate Terraform JSON.
 
 ## Usage
 
 `npm install @vobarian/tfbuilder`
 
 ```javascript
-const {Configuration} = require('@vobarian/tfbuilder');
-const config = Configuration();
+const {Configuration} = require('@vobarian/tfbuilder')
+const config = Configuration()
 // build config as described below
-config.writeTo('myconfig.tf.json');
+config.writeTo('myconfig.tf.json')
 ```
 
-After generating your `.tf.json` files, you can invoke normal `terraform` 
-commands. (Use a shell script or makefile to do both at once.)
+When it's time to invoke Terraform, first run your scripts to generate
+`.tf.json` files, then invoke normal `terraform` 
+commands. (Use a shell script or makefile to do both.)
 
 ## Configuration
 
@@ -58,12 +57,12 @@ and [local_file resource](https://www.terraform.io/docs/providers/local/r/file.h
 
 HCL:
 ```hcl
-data "local_file" "stuff" {
+data "local_file" "my_input" {
     filename = "input.txt"
 }
-resource "local_file" "abc" {
+resource "local_file" "my_output" {
     filename = "output.txt"
-    content  = "${data.local_file.stuff.content} ok"
+    content  = "${data.local_file.my_input.content} ok"
 }
 ```
 TfBuilder:
