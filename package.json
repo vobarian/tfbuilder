@@ -1,22 +1,36 @@
 {
-  "name": "tfjs",
+  "name": "@vobarian/tfbuilder",
   "version": "0.1.0",
-  "description": "Terraform generator",
+  "description": "Terraform JSON generator",
+  "keywords": [
+    "terraform",
+    "generator",
+    "preprocessor",
+    "json"
+  ],
+  "bugs": {
+    "url": "https://github.com/vobarian/tfbuilder/issues"
+  },
   "main": "lib/index.js",
   "scripts": {
     "test": "npm run unit-test && npm run integration-test",
     "unit-test": "jasmine",
     "integration-test": "jasmine spec/integration/integration.spec.js"
   },
-  "author": "",
-  "license": "ISC",
+  "author": {
+    "name": "Chad Berchek",
+    "email": "chad@vobarian.com",
+    "url": "https://www.vobarian.com/"
+  },
+  "license": "MIT",
   "devDependencies": {
     "jasmine": "^3.0.0"
   },
   "files": [
     "lib/*.js"
   ],
-  "publishConfig": {
-    "registry": "http://resolver/api/npm/npm-local/"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vobarian/tfbuilder.git"
   }
 }
