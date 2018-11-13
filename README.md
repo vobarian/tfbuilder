@@ -391,18 +391,23 @@ lists that come from a data source, whereas JS
 only works with data supplied in advance or obtained
 from a lookup implemented in JS.
 
-This example creates servers given a list of IP addresses:
+This example creates multiple files with random contents:
 
 HCL:
 ```hcl
-variable "ips" {
-    default = ["10.0.0.1", "10.0.0.2"]
+locals {
+    files = ["a", "b", "c"]
 }
 
-resource "aws_instance" "app" {
-    count = "${length(var.ips)}"
-    private_ip = "${var.ips[count.index]}"
-    # other arguments...
+resource "random_string" "content" {
+    count  = "${length(local.files)}"
+    length = 10
+}
+
+resource "local_file" "file" {
+    count    = "${length(local.files)}"
+    filename = "${local.files[count.index]}.txt"
+    content  = "${random_string.content.*.result[count.index]}"
 }
 ```
 TfBuilder:
