@@ -237,16 +237,19 @@ function secureS3Bucket(params) { /* return object with aws_s3_bucket args */ }
 config.resource.aws_s3_bucket.my_bucket = secureS3Bucket(/* params */)
 ```
 
-`Configuration` has a `merge` method to combine two Configurations.
-If your function produces multiple objects, you could pass a
-Configuration as a parameter and mutate it in the function, but
-APIs are usually cleaner if they do not mutate the parameters.
-Rather you can return a Configuration and then merge it:
+`Configuration#merge` combines two Configurations by adding all the configuration
+objects (resources, data sources, etc.) from the Configuration
+parameter. A function that creates multiple resources can return a new
+Configuration to be merged into the main one:
 
 ```javascript
-function loadBalancedCluster(options) { /* create & return a Configuration */ }
+function loadBalancedCluster(options) {
+    const {resource, data} = config = Configuration()
+    // add resources
+    return config
+}
 
-config.merge(loadBalancedCluster(/* params */))
+mainConfig.merge(loadBalancedCluster(/* params */))
 ```
 
 The latter approach reduces the amount of code at the call site
@@ -254,12 +257,22 @@ and relieves the caller of the responsibility for
 knowing the resource or data source type (e.g., `aws_s3_bucket`),
 so you may prefer it even for functions that only create one resource.
 
-Every resource, data source, etc. in Terraform needs a unique name
-(address). Terraform modules create unique names by prefixing any resources
-with `module.{module_name}`. But Terraform is unaware of any
-JavaScript functions, so it is up to you to create unique names. If
-you want to use a function more than once, the resources it creates
-need a prefix to make them unique. You could pass a prefix as a parameter.
+Every resource, data source, etc. in Terraform needs a unique
+address. A normal Terraform module can be used multiple times as long
+as each instance has a unique name because Terraform creates unique
+addresses for resources in the module by prefixing them
+with `module.NAME`.
+
+But Terraform is unaware of any
+JavaScript functions, so if you create resources in a function and
+want to use that function repeatedly, it's up to you to create
+unique names. You could pass a prefix as a parameter to the
+function. The function would use the prefix in all resource
+names it generates. Another option is to include a unique property of
+the resource itself in the Terraform name. For example,
+if a function creates AWS S3 buckets, the bucket names are already
+unique, so the bucket name (stripped of invalid characters)
+could be used as part of the resource name to make it unique.
 
 ## Interoperability
 
