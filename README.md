@@ -346,8 +346,8 @@ if (level === "beta") countryWhitelist.push("AU")
 ```
 
 ### Functions
-Using functions as subroutines can seriously
-DRY up the code. One good use case is a CloudFront distribution with multiple
+Functions reduce duplication.
+One good use case is a CloudFront distribution with multiple
 cache behaviors that differ only in the path mapping and origin. For example, one
 project required **120 lines** of HCL to define 5 cache behaviors;
 the TfBuilder equivalent is **37 lines**.
@@ -382,18 +382,52 @@ resource.aws_cloudfront_distribution.cloudfront = {
 ```
 
 ### Arrays, Maps, and Loops
-Arrays, maps, and loops provide an intuitive
-substitute for `count`, splat syntax, and various
-functions in Terraform. Also, Terraform modules don't
-support `count`, but you can easily use loops with
-JS functions. On the other hand, `count` works with
-lists that come from a data source, whereas JS
-only works with data supplied in advance or obtained
-from a lookup implemented in JS.
-
-This example creates multiple files with random contents:
+Terraform uses the `count` meta-parameter to create multiple resources.
+But modules and most nested blocks don't support `count`.
+In JavaScript you can use loops, `forEach`, `map`, etc. with functions
+to generate repeating blocks of any type at any nesting level.
 
 HCL:
+```hcl
+resource "aws_waf_ipset" "ipset" {
+  name = "tfIPSet"
+
+  ip_set_descriptors {
+    type  = "IPV4"
+    value = "192.0.7.0/24"
+  }
+
+  ip_set_descriptors {
+    type  = "IPV4"
+    value = "10.16.0.0/16"
+  }
+
+  ip_set_descriptors {
+    type  = "IPV4"
+    value = "10.21.0.0/16"
+  }
+}
+```
+TfBuilder:
+```javascript
+const ips = ["192.0.7.0/24", "10.16.0.0/16", "10.21.0.0/16"]
+resource.aws_waf_ipset.ipset = {
+    name: "tfIPSet",
+    ip_set_descriptors: ips.map(value => ({ value, type: "IPV4" }))
+}
+```
+
+Another common problem in Terraform is that
+`count.index` becomes part of the resource address
+in the Terraform state. So, if you're generating
+resources from a list and you remove an item from
+the middle, all the resources after it get
+modified or even destroyed and re-created. Using
+TfBuilder you can completely control the resource
+address and decouple it from the index.
+
+This HCL example creates three files with random contents:
+
 ```hcl
 locals {
     files = ["a", "b", "c"]
@@ -410,37 +444,29 @@ resource "local_file" "file" {
     content  = "${random_string.content.*.result[count.index]}"
 }
 ```
-TfBuilder:
-```javascript
-function servers(ips = ["10.0.0.1", "10.0.0.2"]) {
-    ips.forEach(private_ip, i => {
-        config.resource.aws_instance["app" + i] = {
-            private_ip,
-            // other arguments...
-        }
-    })
-}
-```
 
-Both of the above examples share the problem that removing
-an item from the middle of the list will cause the resources
-for all following items to be updated in the next plan
-(or, depending on the argument, even destroyed and
-re-created). This happens because Terraform uses
-`count.index` as part of the resource address, just as the
-TfBuilder example uses the array index. But in
-TfBuilder you can completely control the address,
-eliminating the problem. Here is an improvement
-that allows independent control of the address:
+If you delete `"b"`, both
+`b.txt` and `c.txt` get destroyed and then `c.txt` is re-created
+(with different contents). TfBuilder solution:
 
 ```javascript
-const DEFAULTS = { a: "10.0.0.1", b: "10.0.0.2" }
-function servers(ips = DEFAULTS) {
-    for (const name in ips) {
-        config.resource.aws_instance["app_" + name] = {
-            private_ip: ips[name],
-            // other arguments...
-        }
-    })
-}
+const files = ["a", "b", "c"]
+files.forEach(file => {
+    const rand = resource.random_string['content_' + file] = {
+        length: 10
+    }
+    resource.local_file['file_' + file] = {
+        filename: file + '.txt',
+        content: rand.result
+    }
+})
 ```
+
+In the TfBuilder example, the file name (which is already
+unique) is used as part of the resource address, so removing
+`"b"` just deletes `b.txt`.
+
+However, JS arrays and loops are not a complete replacement for Terraform's
+`count`; whereas `count` can be used with a list produced by a data
+source, JS can only work with data that is known before
+Terraform runs.
