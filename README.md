@@ -21,7 +21,7 @@ npm install @vobarian/tfbuilder
 
 ```javascript
 const {Configuration} = require('@vobarian/tfbuilder')
-const config = Configuration()
+const {resource, data} = config = Configuration()
 // build config as described below
 config.writeTo('myconfig.tf.json')
 ```
@@ -58,8 +58,8 @@ TfBuilder provides two shortcuts under the `resource`,
   2. Generating interpolation strings when an undefined property is read
 
 Compare the following HCL and TfBuilder versions of a configuration
-that copies the file input.txt to output.txt 
-while appending the word "ok":
+that copies the file `input.txt` to `output.txt` 
+while appending the word `ok`:
 
 HCL:
 ```hcl
@@ -73,7 +73,6 @@ resource "local_file" "my_output" {
 ```
 TfBuilder:
 ```javascript
-const {resource, data} = config = Configuration(); // for convenience
 data.local_file.my_input = {
     filename: 'input.txt'
 }
@@ -103,7 +102,7 @@ You can further simplify with JavaScript variables:
 const inputFile = data.local_file.my_input = {
     filename: 'input.txt'
 }
-// inputFile.content === "${data.local_file.my_input.content}"
+assert(inputFile.content === "${data.local_file.my_input.content}")
 ```
 
 Interpolation strings are generated for you only when you read
@@ -123,10 +122,8 @@ const m = config.module.example = {
     source: './example',
     special: 'something' // input variable named "special"
 }
-resource.local_file.abc = {
-    filename: m.special, // === "something"
-    content: m.$output('special') // === "${module.example.special}"
-}
+assert(m.special === "something")
+assert(m.$output("special") === "${module.example.special}")
 ```
 
 The objects you create correspond directly to the JSON that will
@@ -254,10 +251,10 @@ mainConfig.merge(loadBalancedCluster(/* params */))
 
 The latter approach reduces the amount of code at the call site
 and relieves the caller of the responsibility for
-knowing the resource or data source type (e.g., `aws_s3_bucket`),
+knowing the resource or data source type,
 so you may prefer it even for functions that only create one resource.
 
-Every resource, data source, etc. in Terraform needs a unique
+Every resource in Terraform needs a unique
 address. A normal Terraform module can be used multiple times as long
 as each instance has a unique name because Terraform creates unique
 addresses for resources in the module by prefixing them
@@ -271,18 +268,8 @@ function. The function would use the prefix in all resource
 names it generates. Another option is to include a unique property of
 the resource itself in the Terraform name. For example,
 if a function creates AWS S3 buckets, the bucket names are already
-unique, so the bucket name (stripped of invalid characters)
+unique, so the bucket name
 could be used as part of the resource name to make it unique.
-
-## Interoperability
-
-After you finally output your configuration to a `.tf.json` file,
-Terraform reads it along with all other `.tf` and `.tf.json` files
-in the directory. So you can freely mix TfBuilder scripts and plain
-Terraform files. You can interpolate between them too: just type an
-interpolation string in your JavaScript that references resources in
-an ordinary `.tf` file or vice versa. Terraform resolves all
-the names when it runs, and to TfBuilder they're all just strings.
 
 ## Overcome HCL Limitations
 
@@ -331,7 +318,7 @@ const oai = resource.aws_cloudfront_origin_access_identity.identity = {
 
 ### If Statements
 Using `count` for conditionals is hacky and doesn't work for some nested config blocks. For example,
-in HCL, it's currently *impossible* to make an S3 bucket module with a logging configuration
+in HCL, it's currently impossible to make an S3 bucket module with a logging configuration
 conditionally enabled by input variables. In JavaScript it's trivial:
 ```javascript
 function customBucket({otherParams, accessLogsBucket = null}) {
@@ -403,7 +390,7 @@ to generate repeating blocks of any type at any nesting level.
 HCL:
 ```hcl
 resource "aws_waf_ipset" "ipset" {
-  name = "tfIPSet"
+  name = "mainOffice"
 
   ip_set_descriptors {
     type  = "IPV4"
@@ -425,7 +412,7 @@ TfBuilder:
 ```javascript
 const ips = ["192.0.7.0/24", "10.16.0.0/16", "10.21.0.0/16"]
 resource.aws_waf_ipset.ipset = {
-    name: "tfIPSet",
+    name: "mainOffice",
     ip_set_descriptors: ips.map(value => ({ value, type: "IPV4" }))
 }
 ```
@@ -459,8 +446,8 @@ resource "local_file" "file" {
 ```
 
 If you delete `"b"`, both
-`b.txt` and `c.txt` get destroyed and then `c.txt` is re-created
-(with different contents). TfBuilder solution:
+`b.txt` and `c.txt` get destroyed and then `c.txt` is re-created.
+TfBuilder solution:
 
 ```javascript
 const files = ["a", "b", "c"]
@@ -480,6 +467,6 @@ unique) is used as part of the resource address, so removing
 `"b"` just deletes `b.txt`.
 
 However, JS arrays and loops are not a complete replacement for Terraform's
-`count`; whereas `count` can be used with a list produced by a data
+`count`. Whereas `count` can be used with a list produced by a data
 source, JS can only work with data that is known before
 Terraform runs.
